@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AutoSwitch Settings</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <div class="header">
+      <img src="icons/icon32.png" alt="AutoSwitch" class="logo">
+      <div class="header-text">
+        <h1>AutoSwitch for Google</h1>
+        <p class="version">Version 1.0</p>
+      </div>
+    </div>
+
+    <!-- Main Settings -->
+    <div class="settings-section">
+      <div class="setting-item master-toggle">
+        <div class="setting-info">
+          <label for="enabled">Enable AutoSwitch</label>
+          <p class="setting-description">Global enable/disable for all functionality</p>
+        </div>
+        <div class="toggle-switch">
+          <input type="checkbox" id="enabled" checked>
+          <span class="slider"></span>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- Core Features -->
+      <div class="setting-item">
+        <div class="setting-info">
+          <label for="autoSwitch">Auto-switch on permission error</label>
+          <p class="setting-description">Automatically switch when exactly one account works</p>
+        </div>
+        <div class="toggle-switch">
+          <input type="checkbox" id="autoSwitch" checked>
+          <span class="slider"></span>
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-info">
+          <label for="hoverPreview">Hover-preview tooltips</label>
+          <p class="setting-description">Show account info when hovering over Google links</p>
+        </div>
+        <div class="toggle-switch">
+          <input type="checkbox" id="hoverPreview">
+          <span class="slider"></span>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- Notifications -->
+      <h3 class="section-title">Notifications</h3>
+      
+      <div class="setting-item">
+        <div class="setting-info">
+          <label for="showToast">Show in-page toast</label>
+          <p class="setting-description">Blue toast notification in bottom-left corner</p>
+        </div>
+        <div class="toggle-switch">
+          <input type="checkbox" id="showToast" checked>
+          <span class="slider"></span>
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-info">
+          <label for="showDesktopNotification">Show desktop notifications</label>
+          <p class="setting-description">Chrome desktop notifications</p>
+        </div>
+        <div class="toggle-switch">
+          <input type="checkbox" id="showDesktopNotification" checked>
+          <span class="slider"></span>
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-info">
+          <label for="enableUndo">Enable undo option</label>
+          <p class="setting-description">Show undo button in notifications (8 sec timeout)</p>
+        </div>
+        <div class="toggle-switch">
+          <input type="checkbox" id="enableUndo" checked>
+          <span class="slider"></span>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- Input Methods -->
+      <h3 class="section-title">Input Methods</h3>
+      
+      <div class="setting-item">
+        <div class="setting-info">
+          <label for="contextMenu">Context-menu item</label>
+          <p class="setting-description">Right-click "Open with AutoSwitch" on Google links</p>
+        </div>
+        <div class="toggle-switch">
+          <input type="checkbox" id="contextMenu" checked>
+          <span class="slider"></span>
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <div class="setting-info">
+          <label for="keyboardShortcut">Keyboard shortcut</label>
+          <p class="setting-description">Alt+Shift+O to trigger AutoSwitch manually</p>
+        </div>
+        <div class="toggle-switch">
+          <input type="checkbox" id="keyboardShortcut">
+          <span class="slider"></span>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- Advanced Options -->
+      <div class="advanced-section">
+        <button class="expand-btn" id="advancedToggle">
+          <span class="expand-text">Advanced Options</span>
+          <span class="expand-icon">▶</span>
+        </button>
+        
+        <div class="advanced-content" id="advancedContent">
+          <div class="setting-item">
+            <div class="setting-info">
+              <label for="incognitoMode">Enable in Incognito</label>
+              <p class="setting-description">Allow AutoSwitch to work in private browsing</p>
+            </div>
+            <div class="toggle-switch">
+              <input type="checkbox" id="incognitoMode">
+              <span class="slider"></span>
+            </div>
+          </div>
+
+          <div class="setting-item">
+            <div class="setting-info">
+              <label for="autoSwitchDelay">Auto-switch delay (seconds)</label>
+              <p class="setting-description">Delay before auto-switching to prevent rapid switches</p>
+            </div>
+            <div class="number-input">
+              <input type="number" id="autoSwitchDelay" min="0" max="30" value="5">
+            </div>
+          </div>
+
+          <div class="setting-item">
+            <div class="setting-info">
+              <label for="toastDuration">Toast duration (seconds)</label>
+              <p class="setting-description">How long notifications stay visible</p>
+            </div>
+            <div class="number-input">
+              <input type="number" id="toastDuration" min="3" max="30" value="8">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- Management Options -->
+      <div class="management-section">
+        <button class="management-btn" id="rememberedChoices">
+          <span class="btn-icon">⚙️</span>
+          <span class="btn-text">Manage remembered choices</span>
+          <span class="btn-arrow">▶</span>
+        </button>
+
+        <button class="management-btn" id="domainOverrides">
+          <span class="btn-icon">🌐</span>
+          <span class="btn-text">Domain overrides</span>
+          <span class="btn-arrow">▶</span>
+        </button>
+
+        <button class="management-btn" id="exportSettings">
+          <span class="btn-icon">📤</span>
+          <span class="btn-text">Export settings</span>
+          <span class="btn-arrow">▶</span>
+        </button>
+
+        <button class="management-btn" id="importSettings">
+          <span class="btn-icon">📥</span>
+          <span class="btn-text">Import settings</span>
+          <span class="btn-arrow">▶</span>
+        </button>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- Status and Info -->
+      <div class="status-section">
+        <div class="status-item">
+          <span class="status-label">Google Accounts Found:</span>
+          <span class="status-value" id="accountCount">Loading...</span>
+        </div>
+        
+        <div class="status-item">
+          <span class="status-label">Extension Status:</span>
+          <span class="status-value status-active" id="extensionStatus">Active</span>
+        </div>
+        
+        <div class="status-item">
+          <span class="status-label">Last Switch:</span>
+          <span class="status-value" id="lastSwitch">Never</span>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="footer">
+        <div class="footer-links">
+          <a href="#" id="helpLink">Help & FAQ</a>
+          <a href="#" id="feedbackLink">Send Feedback</a>
+          <a href="#" id="resetLink">Reset to Defaults</a>
+        </div>
+        <p class="footer-text">
+          Made with ❤️ for better Google productivity
+        </p>
+      </div>
+    </div>
+
+    <!-- Loading overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+      <div class="loading-spinner"></div>
+      <p>Loading settings...</p>
+    </div>
+  </div>
+
+  <!-- Hidden file input for import -->
+  <input type="file" id="fileInput" accept=".json" style="display: none;">
+
+  <script src="popup.js"></script>
+</body>
+</html> 

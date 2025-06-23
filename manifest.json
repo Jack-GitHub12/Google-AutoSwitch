@@ -1,0 +1,83 @@
+{
+  "manifest_version": 3,
+  "name": "AutoSwitch for Google",
+  "version": "1.0.0",
+  "description": "Auto-switch Google accounts intelligently when accessing Google Docs, Sheets, and Drive files",
+  
+  "permissions": [
+    "storage",
+    "notifications",
+    "contextMenus",
+    "tabs",
+    "activeTab",
+    "scripting"
+  ],
+  
+  "host_permissions": [
+    "*://*.google.com/*",
+    "*://*.googledrive.com/*",
+    "*://*.googleusercontent.com/*"
+  ],
+  
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  
+  "content_scripts": [
+    {
+      "matches": [
+        "*://docs.google.com/*",
+        "*://sheets.google.com/*",
+        "*://slides.google.com/*",
+        "*://drive.google.com/*",
+        "*://mail.google.com/*"
+      ],
+      "js": ["content-script.js"],
+      "css": ["content-script.css"],
+      "run_at": "document_end"
+    }
+  ],
+  
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "AutoSwitch Settings",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  
+  "commands": {
+    "trigger-autoswitch": {
+      "suggested_key": {
+        "default": "Alt+Shift+O",
+        "mac": "Alt+Shift+O"
+      },
+      "description": "Manually trigger AutoSwitch on current tab"
+    }
+  },
+  
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "toast.html",
+        "modal.html",
+        "icons/*"
+      ],
+      "matches": [
+        "*://*.google.com/*",
+        "*://*.googledrive.com/*"
+      ]
+    }
+  ]
+} 

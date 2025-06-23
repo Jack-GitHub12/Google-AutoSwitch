@@ -1,0 +1,283 @@
+/* AutoSwitch for Google - Content Script Styles */
+
+/* Toast notification styles */
+#autoswitch-toast {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.4;
+  box-sizing: border-box;
+}
+
+#autoswitch-toast button:hover {
+  background: rgba(255, 255, 255, 0.3) !important;
+  transform: translateY(-1px);
+  transition: all 0.2s ease;
+}
+
+#autoswitch-toast button:active {
+  transform: translateY(0);
+}
+
+/* Hover tooltip styles */
+.autoswitch-hover-tooltip {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 12px;
+  line-height: 1.3;
+  box-sizing: border-box;
+  transition: opacity 0.2s ease;
+}
+
+.autoswitch-hover-tooltip::after {
+  content: '';
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 5px solid #333;
+}
+
+/* Account picker modal styles */
+#autoswitch-account-picker {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  backdrop-filter: blur(2px);
+}
+
+#autoswitch-account-picker .modal-content {
+  animation: modalSlideIn 0.3s ease-out;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+#autoswitch-account-picker .account-item {
+  transition: all 0.2s ease;
+}
+
+#autoswitch-account-picker .account-item:hover {
+  background: #f8f9fa !important;
+  border-color: #1a73e8 !important;
+}
+
+#autoswitch-account-picker .account-item.selected {
+  background: #e8f0fe !important;
+  border-color: #1a73e8 !important;
+}
+
+#autoswitch-account-picker button {
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+#autoswitch-account-picker button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+#autoswitch-account-picker button:active {
+  transform: translateY(0);
+}
+
+#autoswitch-account-picker #open-btn:hover {
+  background: #1557b0 !important;
+}
+
+#autoswitch-account-picker #cancel-btn:hover {
+  background: #f8f9fa !important;
+}
+
+/* Fallback modal styles */
+#autoswitch-fallback-modal {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  backdrop-filter: blur(2px);
+}
+
+#autoswitch-fallback-modal .modal-content {
+  animation: modalSlideIn 0.3s ease-out;
+}
+
+#autoswitch-fallback-modal button {
+  transition: all 0.2s ease;
+  font-family: inherit;
+  font-weight: 500;
+}
+
+#autoswitch-fallback-modal button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+#autoswitch-fallback-modal button:active {
+  transform: translateY(0);
+}
+
+#autoswitch-fallback-modal #request-access-btn:hover {
+  background: #1557b0 !important;
+}
+
+#autoswitch-fallback-modal #retry-btn:hover,
+#autoswitch-fallback-modal #native-dialog-btn:hover,
+#autoswitch-fallback-modal #close-btn:hover {
+  background: #f8f9fa !important;
+}
+
+/* Drive file tooltip styles */
+.autoswitch-file-tooltip {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  box-sizing: border-box;
+  transition: opacity 0.2s ease;
+}
+
+.autoswitch-file-tooltip::after {
+  content: '';
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 5px solid #333;
+}
+
+/* Accessibility improvements */
+.autoswitch-hover-tooltip[role="tooltip"],
+.autoswitch-file-tooltip[role="tooltip"] {
+  opacity: 0;
+  animation: tooltipFadeIn 0.2s ease forwards;
+}
+
+@keyframes tooltipFadeIn {
+  to {
+    opacity: 1;
+  }
+}
+
+/* Focus indicators for accessibility */
+#autoswitch-toast button:focus,
+#autoswitch-account-picker button:focus,
+#autoswitch-fallback-modal button:focus {
+  outline: 2px solid #1a73e8;
+  outline-offset: 2px;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  #autoswitch-toast {
+    border: 2px solid #ffffff;
+  }
+  
+  .autoswitch-hover-tooltip,
+  .autoswitch-file-tooltip {
+    border: 1px solid #ffffff;
+  }
+  
+  #autoswitch-account-picker,
+  #autoswitch-fallback-modal {
+    background: rgba(0, 0, 0, 0.8);
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  #autoswitch-toast,
+  .autoswitch-hover-tooltip,
+  .autoswitch-file-tooltip,
+  #autoswitch-account-picker .modal-content,
+  #autoswitch-fallback-modal .modal-content {
+    animation: none !important;
+    transition: none !important;
+  }
+  
+  #autoswitch-toast button,
+  #autoswitch-account-picker button,
+  #autoswitch-fallback-modal button {
+    transition: none !important;
+    transform: none !important;
+  }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  #autoswitch-account-picker .modal-content,
+  #autoswitch-fallback-modal .modal-content {
+    background: #2d2d2d;
+    color: #ffffff;
+    border: 1px solid #555;
+  }
+  
+  #autoswitch-account-picker h3,
+  #autoswitch-fallback-modal h3 {
+    color: #8ab4f8;
+  }
+  
+  #autoswitch-account-picker p,
+  #autoswitch-fallback-modal p {
+    color: #bdc1c6;
+  }
+  
+  #autoswitch-account-picker .account-item {
+    background: #3c4043;
+    border-color: #5f6368;
+    color: #ffffff;
+  }
+  
+  #autoswitch-account-picker .account-item:hover {
+    background: #48494a !important;
+  }
+  
+  #autoswitch-account-picker .account-item.selected {
+    background: #1e3a5f !important;
+    border-color: #8ab4f8 !important;
+  }
+  
+  #autoswitch-account-picker #cancel-btn,
+  #autoswitch-fallback-modal #retry-btn,
+  #autoswitch-fallback-modal #native-dialog-btn,
+  #autoswitch-fallback-modal #close-btn {
+    background: #3c4043;
+    border-color: #5f6368;
+    color: #ffffff;
+  }
+  
+  #autoswitch-account-picker #cancel-btn:hover,
+  #autoswitch-fallback-modal #retry-btn:hover,
+  #autoswitch-fallback-modal #native-dialog-btn:hover,
+  #autoswitch-fallback-modal #close-btn:hover {
+    background: #48494a !important;
+  }
+}
+
+/* Mobile responsive design */
+@media (max-width: 768px) {
+  #autoswitch-toast {
+    left: 10px !important;
+    right: 10px !important;
+    bottom: 10px !important;
+    max-width: none !important;
+    width: auto !important;
+  }
+  
+  #autoswitch-account-picker .modal-content,
+  #autoswitch-fallback-modal .modal-content {
+    margin: 20px;
+    width: calc(100% - 40px);
+    max-width: none;
+  }
+  
+  .autoswitch-hover-tooltip,
+  .autoswitch-file-tooltip {
+    font-size: 11px;
+    padding: 6px 10px;
+  }
+} 
