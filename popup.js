@@ -110,6 +110,12 @@ class PopupManager {
       this.resetSettings();
     });
 
+    // Quick test button
+    document.getElementById('quickTestBtn').addEventListener('click', (e) => {
+      e.preventDefault();
+      this.runQuickTest();
+    });
+
     // File input for import
     const fileInput = document.getElementById('fileInput');
     fileInput.addEventListener('change', (e) => {
@@ -375,6 +381,104 @@ class PopupManager {
     chrome.tabs.create({
       url: 'mailto:feedback@autoswitch.com?subject=AutoSwitch%20Feedback'
     });
+  }
+
+  async runQuickTest() {
+    try {
+      // Show loading state on button
+      const testBtn = document.getElementById('quickTestBtn');
+      const originalText = testBtn.innerHTML;
+      testBtn.innerHTML = '<span class="btn-icon">⏳</span><span class="btn-text">Testing...</span>';
+      testBtn.disabled = true;
+
+      // Send message to active tab to run account detection
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tabs.length > 0) {
+        const tab = tabs[0];
+        
+        // Check if tab is a Google service
+        const isGoogleService = tab.url.includes('google.com');
+        if (!isGoogleService) {
+          this.showToast('Please navigate to a Google service (Gmail, Drive, Docs, etc.) and try again.', true);
+          testBtn.innerHTML = originalText;
+          testBtn.disabled = false;
+          return;
+        }
+
+        try {
+          // First, ensure content script is loaded
+          await chrome.tabs.sendMessage(tab.id, { action: 'ping' });
+          
+          // Run comprehensive account detection
+          console.log('🧪 Starting Quick Test - check console on the Google page for detailed output');
+          const result = await chrome.tabs.sendMessage(tab.id, { action: 'detectAccounts' });
+          
+          if (result && result.length > 0) {
+            this.showToast(`✅ Found ${result.length} account(s)! Check console for details.`);
+            console.log('🎯 Quick Test Results:', result);
+          } else {
+            this.showToast('⚠️ No accounts detected. Check console for debug info.', true);
+            console.log('❌ Quick Test: No accounts detected');
+          }
+
+          // Also trigger the debug version via content script
+          try {
+            await chrome.tabs.executeScript(tab.id, {
+              code: `
+                if (window.autoswitchInstance) {
+                  console.log('🧪 Running comprehensive debug detection...');
+                  window.autoswitchInstance.detectAccountsWithDebug();
+                } else {
+                  console.log('❌ AutoSwitch instance not found - extension may not be loaded properly');
+                }
+              `
+            });
+          } catch (executeError) {
+            console.log('Note: Could not run debug command:', executeError.message);
+          }
+
+        } catch (messageError) {
+          // Content script not loaded, try to inject it
+          console.log('Content script not loaded, attempting to inject...');
+          
+          try {
+            await chrome.tabs.executeScript(tab.id, { file: 'content-script.js' });
+            await chrome.tabs.insertCSS(tab.id, { file: 'content-script.css' });
+            
+            // Wait a moment for injection to complete
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Try again
+            const result = await chrome.tabs.sendMessage(tab.id, { action: 'detectAccounts' });
+            
+            if (result && result.length > 0) {
+              this.showToast(`✅ Found ${result.length} account(s) after injection!`);
+            } else {
+              this.showToast('⚠️ Still no accounts detected. Check console.', true);
+            }
+            
+          } catch (injectionError) {
+            this.showToast('❌ Could not inject content script. Try refreshing the page.', true);
+            console.error('Injection failed:', injectionError);
+          }
+        }
+
+        // Update account count in status
+        this.updateStatus();
+        
+      } else {
+        this.showToast('No active tab found', true);
+      }
+
+    } catch (error) {
+      console.error('Quick test failed:', error);
+      this.showToast('Test failed. Check console for details.', true);
+    } finally {
+      // Restore button
+      const testBtn = document.getElementById('quickTestBtn');
+      testBtn.innerHTML = '<span class="btn-icon">🔍</span><span class="btn-text">Quick Test</span>';
+      testBtn.disabled = false;
+    }
   }
 
   showToast(message, isError = false) {
