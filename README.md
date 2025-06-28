@@ -213,4 +213,4 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ---
 
-**Made with ❤️ for better Google productivity** # Google-AutoSwitch
+**Made with ❤️ for better Google productivity**

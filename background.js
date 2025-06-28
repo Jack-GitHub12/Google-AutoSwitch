@@ -3,34 +3,51 @@ class AutoSwitchManager {
   constructor() {
     this.accountCache = new Map();
     this.switchHistory = new Map();
+    this.storedAccounts = [];
     this.settings = {
       enabled: true,
+      autoSwitch: true,
       showToast: true,
       showDesktopNotification: true,
       enableUndo: true,
       hoverPreview: true,
       contextMenu: true,
-      keyboardShortcut: true
+      keyboardShortcut: true,
+      incognitoMode: false,
+      autoSwitchDelay: 5,
+      toastDuration: 8
     };
     this.init();
   }
 
   async init() {
+    console.log('🚀 AutoSwitch Background Script initializing...');
     await this.loadSettings();
     this.setupEventListeners();
     this.createContextMenus();
     await this.setupNotificationPermission();
+    console.log('✅ AutoSwitch Background Script ready');
   }
 
   async loadSettings() {
-    const result = await chrome.storage.sync.get('autoswitchSettings');
-    if (result.autoswitchSettings) {
-      this.settings = { ...this.settings, ...result.autoswitchSettings };
+    try {
+      const result = await chrome.storage.sync.get('autoswitchSettings');
+      if (result.autoswitchSettings) {
+        this.settings = { ...this.settings, ...result.autoswitchSettings };
+      }
+      console.log('⚙️ Background: Settings loaded:', this.settings);
+    } catch (error) {
+      console.error('Failed to load settings:', error);
     }
   }
 
   async saveSettings() {
-    await chrome.storage.sync.set({ autoswitchSettings: this.settings });
+    try {
+      await chrome.storage.sync.set({ autoswitchSettings: this.settings });
+      console.log('💾 Background: Settings saved');
+    } catch (error) {
+      console.error('Failed to save settings:', error);
+    }
   }
 
   setupEventListeners() {
@@ -40,7 +57,7 @@ class AutoSwitchManager {
     // Handle keyboard shortcuts
     chrome.commands.onCommand.addListener(this.handleCommand.bind(this));
     
-    // Handle messages from content scripts
+    // Handle messages from content scripts and popup
     chrome.runtime.onMessage.addListener(this.handleMessage.bind(this));
     
     // Handle context menu clicks
@@ -80,7 +97,7 @@ class AutoSwitchManager {
   }
 
   isGoogleServiceUrl(url) {
-    return /https:\/\/(docs|sheets|slides|drive)\.google\.com/.test(url);
+    return /https:\/\/(docs|sheets|slides|drive|mail)\.google\.com/.test(url);
   }
 
   async handleCommand(command) {
@@ -93,25 +110,86 @@ class AutoSwitchManager {
   }
 
   async handleMessage(message, sender, sendResponse) {
-    switch (message.action) {
-      case 'checkPermissionError':
-        await this.handlePermissionError(sender.tab.id, sender.tab.url, message.data);
-        break;
-      case 'undoSwitch':
-        await this.undoLastSwitch(sender.tab.id);
-        break;
-      case 'updateSettings':
-        this.settings = { ...this.settings, ...message.settings };
-        await this.saveSettings();
-        this.createContextMenus();
-        break;
-      case 'getAccounts':
-        sendResponse(await this.getGoogleAccounts());
-        break;
-      case 'requestAccess':
-        await this.handleAccessRequest(message.data);
-        break;
+    console.log('📨 Background received message:', message.action);
+    
+    try {
+      switch (message.action) {
+        case 'checkPermissionError':
+          await this.handlePermissionError(sender.tab.id, sender.tab.url, message.data);
+          sendResponse({ success: true });
+          break;
+          
+        case 'undoSwitch':
+          await this.undoLastSwitch(sender.tab.id);
+          sendResponse({ success: true });
+          break;
+          
+        case 'updateSettings':
+          this.settings = { ...this.settings, ...message.settings };
+          await this.saveSettings();
+          this.createContextMenus();
+          sendResponse({ success: true });
+          break;
+          
+        case 'getSettings':
+          sendResponse(this.settings);
+          break;
+          
+        case 'getAccounts':
+          const accounts = await this.getSimpleAccountList();
+          sendResponse(accounts);
+          break;
+          
+        case 'getStoredAccounts':
+          sendResponse(this.storedAccounts);
+          break;
+          
+        case 'detectAccounts':
+          // Delegate to content script for comprehensive detection
+          if (sender.tab) {
+            try {
+              const result = await chrome.tabs.sendMessage(sender.tab.id, { action: 'runDetection' });
+              sendResponse(result || []);
+            } catch (error) {
+              console.log('Content script not ready, returning stored accounts');
+              sendResponse(this.storedAccounts);
+            }
+          } else {
+            sendResponse(this.storedAccounts);
+          }
+          break;
+          
+        case 'switchToAccount':
+          await this.switchToAccount(sender.tab.id, message.data);
+          sendResponse({ success: true });
+          break;
+          
+        case 'showAccountPicker':
+          await this.showAccountPicker(sender.tab.id, message.data);
+          sendResponse({ success: true });
+          break;
+          
+        case 'storeAccounts':
+          this.storedAccounts = message.data;
+          console.log(`💾 Stored ${this.storedAccounts.length} accounts in background`);
+          sendResponse({ success: true });
+          break;
+          
+        case 'requestAccess':
+          await this.handleAccessRequest(message.data);
+          sendResponse({ success: true });
+          break;
+          
+        default:
+          console.log('⚠️ Unknown message action:', message.action);
+          sendResponse({ error: 'Unknown action' });
+      }
+    } catch (error) {
+      console.error('Error handling message:', error);
+      sendResponse({ error: error.message });
     }
+    
+    return true; // Keep message channel open for async response
   }
 
   async handleContextMenu(info, tab) {
@@ -123,224 +201,175 @@ class AutoSwitchManager {
   async checkAndHandlePermissionError(tabId, url) {
     if (!this.settings.enabled) return;
     
-    // Inject content script to check for permission errors
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      func: this.detectPermissionError,
-    });
-  }
-
-  // Function to be injected into page
-  detectPermissionError() {
-    const errorSelectors = [
-      '[data-error-type="permission"]',
-      '.error-page-content',
-      '[aria-label*="permission"]',
-      '.permission-denied',
-      'div:contains("don\'t have permission")',
-      'div:contains("You need permission")'
-    ];
-
-    for (const selector of errorSelectors) {
-      if (document.querySelector(selector)) {
-        chrome.runtime.sendMessage({
-          action: 'checkPermissionError',
-          data: { url: window.location.href, hasError: true }
-        });
-        return;
-      }
-    }
-
-    // Check for specific error text
-    const bodyText = document.body.innerText.toLowerCase();
-    if (bodyText.includes("don't have permission") || 
-        bodyText.includes("you need permission") ||
-        bodyText.includes("access denied")) {
-      chrome.runtime.sendMessage({
-        action: 'checkPermissionError',
-        data: { url: window.location.href, hasError: true }
-      });
-    }
+    // The content script will handle permission error detection
+    // and send us a message if an error is found
   }
 
   async handlePermissionError(tabId, url, data) {
     if (!data.hasError) return;
     
-    console.log('Permission error detected, scanning accounts...');
+    console.log('🚫 Permission error detected, triggering AutoSwitch...');
     await this.triggerAutoSwitch(tabId, url);
   }
 
   async triggerAutoSwitch(tabId, url) {
     try {
-      const accounts = await this.getGoogleAccounts();
-      const validAccounts = await this.scanAccountsForAccess(url, accounts);
+      console.log('🔄 Triggering AutoSwitch for:', url);
       
-      if (validAccounts.length === 0) {
-        await this.showFallbackModal(tabId, url);
-      } else if (validAccounts.length === 1) {
-        await this.performAutoSwitch(tabId, url, validAccounts[0]);
-      } else {
-        await this.showAccountPicker(tabId, url, validAccounts);
+      // Send message to content script to handle the switching logic
+      const result = await chrome.tabs.sendMessage(tabId, { 
+        action: 'triggerAutoSwitch',
+        data: { url } 
+      });
+      
+      if (result && result.success) {
+        console.log('✅ AutoSwitch completed successfully');
+        
+        // Store switch history for undo
+        if (result.switchData) {
+          this.switchHistory.set(tabId, {
+            ...result.switchData,
+            timestamp: Date.now()
+          });
+          
+          // Update last switch time
+          await chrome.storage.local.set({ lastSwitch: Date.now() });
+        }
+        
+        // Show desktop notification if enabled
+        if (this.settings.showDesktopNotification && result.account) {
+          this.showDesktopNotification(result.account);
+        }
+        
+        // Flash badge
+        this.flashBadge();
       }
+      
     } catch (error) {
       console.error('AutoSwitch error:', error);
+      
+      // Fallback: try basic account switching
+      try {
+        await this.basicAccountSwitch(tabId, url);
+      } catch (fallbackError) {
+        console.error('Fallback switch also failed:', fallbackError);
+      }
     }
   }
 
-  async getGoogleAccounts() {
-    // Get Google accounts from cookies or other available methods
-    try {
-      const [tab] = await chrome.tabs.query({ url: '*://accounts.google.com/*' });
-      if (tab) {
-        // If accounts page is available, extract account info
-        const result = await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: this.extractAccountsFromPage
-        });
-        return result[0]?.result || [];
-      }
-      
-      // Fallback: try to detect from any Google service
-      const googleTabs = await chrome.tabs.query({ url: '*://*.google.com/*' });
-      if (googleTabs.length > 0) {
-        const result = await chrome.scripting.executeScript({
-          target: { tabId: googleTabs[0].id },
-          func: this.extractAccountsFromGoogleService
-        });
-        return result[0]?.result || [];
-      }
-      
-      return [];
-    } catch (error) {
-      console.error('Failed to get Google accounts:', error);
-      return [];
-    }
-  }
-
-  // Function to be injected to extract accounts
-  extractAccountsFromPage() {
-    const accounts = [];
-    // Try to find account elements in various Google service UIs
-    const accountElements = document.querySelectorAll('[data-email], [aria-label*="@"], .gb_B, .gb_Ab');
+  async basicAccountSwitch(tabId, url) {
+    console.log('🔄 Attempting basic account switch...');
     
-    accountElements.forEach((el, index) => {
-      const email = el.dataset.email || el.getAttribute('aria-label') || el.textContent;
-      if (email && email.includes('@')) {
-        accounts.push({
-          email: email.trim(),
-          index: index,
-          name: email.split('@')[0]
-        });
-      }
-    });
-    
-    return accounts.length > 0 ? accounts : [{ email: 'default@gmail.com', index: 0, name: 'default' }];
-  }
-
-  extractAccountsFromGoogleService() {
-    const accounts = [];
-    // Extract from account switcher or profile elements
-    const profileElements = document.querySelectorAll('[data-email], .gb_Ab, [role="menuitem"]');
-    
-    profileElements.forEach((el, index) => {
-      const text = el.textContent || el.getAttribute('aria-label') || '';
-      const emailMatch = text.match(/[\w.-]+@[\w.-]+\.\w+/);
-      if (emailMatch) {
-        accounts.push({
-          email: emailMatch[0],
-          index: index,
-          name: emailMatch[0].split('@')[0]
-        });
-      }
-    });
-    
-    return accounts.length > 0 ? accounts : [{ email: 'default@gmail.com', index: 0, name: 'default' }];
-  }
-
-  async scanAccountsForAccess(url, accounts) {
-    const validAccounts = [];
-    
-    for (const account of accounts) {
-      const testUrl = this.buildAuthUserUrl(url, account.index);
-      const hasAccess = await this.testAccountAccess(testUrl);
-      
-      if (hasAccess) {
-        validAccounts.push(account);
-      }
-    }
-    
-    return validAccounts;
-  }
-
-  buildAuthUserUrl(url, accountIndex) {
+    // Simple fallback: try authuser=1 if current is authuser=0 or no authuser
     const urlObj = new URL(url);
-    urlObj.searchParams.set('authuser', accountIndex.toString());
-    return urlObj.toString();
-  }
-
-  async testAccountAccess(url) {
-    try {
-      // Create a temporary tab to test access
-      const tab = await chrome.tabs.create({ url, active: false });
-      
-      // Wait a moment for the page to load
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Check if there's a permission error
-      const result = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: () => {
-          const bodyText = document.body.innerText.toLowerCase();
-          return !bodyText.includes("don't have permission") && 
-                 !bodyText.includes("you need permission") &&
-                 !bodyText.includes("access denied");
-        }
-      });
-      
-      // Close the test tab
-      await chrome.tabs.remove(tab.id);
-      
-      return result[0]?.result || false;
-    } catch (error) {
-      return false;
-    }
-  }
-
-  async performAutoSwitch(tabId, url, account) {
-    const newUrl = this.buildAuthUserUrl(url, account.index);
+    const currentAuthUser = urlObj.searchParams.get('authuser') || '0';
+    const newAuthUser = currentAuthUser === '0' ? '1' : '0';
     
-    // Store switch history for undo
-    this.switchHistory.set(tabId, {
-      originalUrl: url,
-      newUrl: newUrl,
-      account: account,
-      timestamp: Date.now()
-    });
+    urlObj.searchParams.set('authuser', newAuthUser);
+    const newUrl = urlObj.toString();
     
-    // Update the tab
     await chrome.tabs.update(tabId, { url: newUrl });
     
-    // Show notifications
-    await this.showSwitchNotification(account);
+    this.showDesktopNotification({ 
+      email: `Account ${newAuthUser}`,
+      name: `Account ${newAuthUser}`
+    });
     
-    // Flash badge
-    if (this.settings.showDesktopNotification) {
-      this.flashBadge();
+    this.flashBadge();
+  }
+
+  async getSimpleAccountList() {
+    // Try to get accounts from active Google tab
+    try {
+      const googleTabs = await chrome.tabs.query({ 
+        url: ['*://*.google.com/*'] 
+      });
+      
+      if (googleTabs.length > 0) {
+        for (const tab of googleTabs) {
+          try {
+            const result = await chrome.tabs.sendMessage(tab.id, { 
+              action: 'detectAccounts' 
+            });
+            
+            if (result && result.length > 0) {
+              this.storedAccounts = result;
+              return result;
+            }
+          } catch (error) {
+            // Tab doesn't have content script, continue to next
+            continue;
+          }
+        }
+      }
+      
+      // Return stored accounts or default
+      return this.storedAccounts.length > 0 ? this.storedAccounts : [
+        { email: 'account@gmail.com', name: 'Account 1', index: 0 }
+      ];
+      
+    } catch (error) {
+      console.error('Failed to get account list:', error);
+      return [{ email: 'account@gmail.com', name: 'Account 1', index: 0 }];
     }
   }
 
-  async showSwitchNotification(account) {
-    // Desktop notification
-    if (this.settings.showDesktopNotification) {
-      chrome.notifications.create({
-        type: 'basic',
-        iconUrl: 'icons/icon48.png',
-        title: 'AutoSwitch',
-        message: `You're now viewing with ${account.email}`
+  async switchToAccount(tabId, data) {
+    try {
+      const { account, url } = data;
+      console.log(`🔄 Switching to account: ${account.email}`);
+      
+      // Build URL with authuser parameter
+      const urlObj = new URL(url);
+      urlObj.searchParams.set('authuser', account.index || 0);
+      const newUrl = urlObj.toString();
+      
+      // Store switch history
+      this.switchHistory.set(tabId, {
+        originalUrl: url,
+        newUrl: newUrl,
+        account: account,
+        timestamp: Date.now()
       });
+      
+      // Update the tab
+      await chrome.tabs.update(tabId, { url: newUrl });
+      
+      // Show notifications
+      if (this.settings.showDesktopNotification) {
+        this.showDesktopNotification(account);
+      }
+      
+      // Send message to content script to show toast
+      try {
+        await chrome.tabs.sendMessage(tabId, {
+          action: 'showSwitchNotification',
+          data: { account }
+        });
+      } catch (error) {
+        // Content script might not be ready yet, that's okay
+      }
+      
+      this.flashBadge();
+      
+      // Update last switch time
+      await chrome.storage.local.set({ lastSwitch: Date.now() });
+      
+    } catch (error) {
+      console.error('Failed to switch account:', error);
+      throw error;
     }
+  }
+
+  showDesktopNotification(account) {
+    if (!this.settings.showDesktopNotification) return;
     
-    // In-page toast will be handled by content script
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: 'icons/icon48.png',
+      title: 'AutoSwitch',
+      message: `Switched to ${account.email}`
+    });
   }
 
   flashBadge() {
@@ -348,208 +377,72 @@ class AutoSwitchManager {
     chrome.action.setBadgeBackgroundColor({ color: '#4285f4' });
     setTimeout(() => {
       chrome.action.setBadgeText({ text: '' });
-    }, 1000);
+    }, 2000);
   }
 
-  async showAccountPicker(tabId, url, validAccounts) {
-    // Send message to content script to show picker modal
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      func: this.injectAccountPicker,
-      args: [validAccounts, url]
-    });
-  }
-
-  // Function to be injected to show account picker
-  injectAccountPicker(validAccounts, url) {
-    // Remove existing picker if any
-    const existingPicker = document.getElementById('autoswitch-account-picker');
-    if (existingPicker) {
-      existingPicker.remove();
-    }
-
-    // Create modal overlay
-    const overlay = document.createElement('div');
-    overlay.id = 'autoswitch-account-picker';
-    overlay.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.5);
-      z-index: 10000;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    `;
-
-    // Create modal content
-    const modal = document.createElement('div');
-    modal.style.cssText = `
-      background: white;
-      border-radius: 8px;
-      padding: 24px;
-      max-width: 400px;
-      width: 90%;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    `;
-
-    modal.innerHTML = `
-      <h3 style="margin: 0 0 16px 0; color: #1a73e8;">Choose Account</h3>
-      <p style="margin: 0 0 16px 0; color: #5f6368;">Multiple accounts have access. Which would you like to use?</p>
-      <div id="account-list"></div>
-      <div style="margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end;">
-        <button id="cancel-btn" style="padding: 8px 16px; border: 1px solid #dadce0; background: white; border-radius: 4px; cursor: pointer;">Cancel</button>
-        <button id="open-btn" style="padding: 8px 16px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer;">Open</button>
-      </div>
-    `;
-
-    const accountList = modal.querySelector('#account-list');
-    let selectedAccount = validAccounts[0];
-
-    validAccounts.forEach((account, index) => {
-      const accountDiv = document.createElement('div');
-      accountDiv.style.cssText = `
-        display: flex;
-        align-items: center;
-        padding: 8px;
-        margin: 4px 0;
-        border: 1px solid #dadce0;
-        border-radius: 4px;
-        cursor: pointer;
-        ${index === 0 ? 'background: #e8f0fe;' : ''}
-      `;
-      
-      accountDiv.innerHTML = `
-        <input type="radio" name="account" value="${index}" ${index === 0 ? 'checked' : ''} style="margin-right: 8px;">
-        <div>
-          <div style="font-weight: 500;">${account.email}</div>
-          <div style="font-size: 12px; color: #5f6368;">${account.name}</div>
-        </div>
-      `;
-
-      accountDiv.addEventListener('click', () => {
-        accountList.querySelectorAll('input[type="radio"]').forEach(radio => radio.checked = false);
-        accountDiv.querySelector('input').checked = true;
-        selectedAccount = account;
-        
-        accountList.querySelectorAll('div').forEach(div => div.style.background = '');
-        accountDiv.style.background = '#e8f0fe';
+  async showAccountPicker(tabId, data) {
+    try {
+      // Send message to content script to show picker
+      await chrome.tabs.sendMessage(tabId, {
+        action: 'showAccountPicker',
+        data: data
       });
-
-      accountList.appendChild(accountDiv);
-    });
-
-    // Handle buttons
-    modal.querySelector('#cancel-btn').addEventListener('click', () => {
-      overlay.remove();
-    });
-
-    modal.querySelector('#open-btn').addEventListener('click', () => {
-      const newUrl = url.includes('?') 
-        ? `${url}&authuser=${selectedAccount.index}`
-        : `${url}?authuser=${selectedAccount.index}`;
-      
-      window.location.href = newUrl;
-      overlay.remove();
-    });
-
-    overlay.appendChild(modal);
-    document.body.appendChild(overlay);
-  }
-
-  async showFallbackModal(tabId, url) {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      func: this.injectFallbackModal,
-      args: [url]
-    });
-  }
-
-  // Function to be injected to show fallback modal
-  injectFallbackModal(url) {
-    const overlay = document.createElement('div');
-    overlay.id = 'autoswitch-fallback-modal';
-    overlay.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.5);
-      z-index: 10000;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    `;
-
-    const modal = document.createElement('div');
-    modal.style.cssText = `
-      background: white;
-      border-radius: 8px;
-      padding: 24px;
-      max-width: 400px;
-      width: 90%;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    `;
-
-    const title = document.title || 'Document';
-    modal.innerHTML = `
-      <h3 style="margin: 0 0 16px 0; color: #ea4335;">No Access Found</h3>
-      <p style="margin: 0 0 16px 0; color: #5f6368;">None of your Google accounts have access to this document.</p>
-      <div style="display: flex; flex-direction: column; gap: 8px;">
-        <button id="request-access-btn" style="padding: 12px; background: #1a73e8; color: white; border: none; border-radius: 4px; cursor: pointer;">Request Access from Owner</button>
-        <button id="retry-btn" style="padding: 12px; border: 1px solid #dadce0; background: white; border-radius: 4px; cursor: pointer;">Retry Now</button>
-        <button id="native-dialog-btn" style="padding: 12px; border: 1px solid #dadce0; background: white; border-radius: 4px; cursor: pointer;">Open Google's Permission Dialog</button>
-        <button id="close-btn" style="padding: 12px; border: 1px solid #dadce0; background: white; border-radius: 4px; cursor: pointer;">Close</button>
-      </div>
-    `;
-
-    // Handle buttons
-    modal.querySelector('#request-access-btn').addEventListener('click', () => {
-      const subject = encodeURIComponent(`Access request for ${title}`);
-      const body = encodeURIComponent(`Hi, I need access to this document: ${url}`);
-      window.open(`mailto:?subject=${subject}&body=${body}`);
-    });
-
-    modal.querySelector('#retry-btn').addEventListener('click', () => {
-      window.location.reload();
-    });
-
-    modal.querySelector('#native-dialog-btn').addEventListener('click', () => {
-      // Trigger Google's native permission dialog by trying to access
-      window.location.href = url;
-    });
-
-    modal.querySelector('#close-btn').addEventListener('click', () => {
-      overlay.remove();
-    });
-
-    overlay.appendChild(modal);
-    document.body.appendChild(overlay);
+    } catch (error) {
+      console.error('Failed to show account picker:', error);
+    }
   }
 
   async undoLastSwitch(tabId) {
     const switchData = this.switchHistory.get(tabId);
-    if (switchData && Date.now() - switchData.timestamp < 30000) { // 30 second window
+    if (!switchData) {
+      console.log('No switch history found for tab');
+      return;
+    }
+    
+    const timeSinceSwitch = Date.now() - switchData.timestamp;
+    if (timeSinceSwitch > 30000) { // 30 second limit
+      console.log('Switch too old to undo');
+      return;
+    }
+    
+    try {
       await chrome.tabs.update(tabId, { url: switchData.originalUrl });
       this.switchHistory.delete(tabId);
+      
+      if (this.settings.showDesktopNotification) {
+        chrome.notifications.create({
+          type: 'basic',
+          iconUrl: 'icons/icon48.png',
+          title: 'AutoSwitch',
+          message: 'Account switch undone'
+        });
+      }
+      
+    } catch (error) {
+      console.error('Failed to undo switch:', error);
     }
   }
 
   async handleAccessRequest(data) {
-    // Handle access request functionality
-    const subject = encodeURIComponent(`Access request for ${data.title || 'document'}`);
-    const body = encodeURIComponent(`Hi, I need access to this document: ${data.url}`);
-    
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    await chrome.tabs.create({ 
-      url: `mailto:?subject=${subject}&body=${body}`,
-      index: tab.index + 1
-    });
+    // Open Google's access request dialog
+    const requestUrl = `https://accounts.google.com/AccountChooser?continue=${encodeURIComponent(data.url)}`;
+    await chrome.tabs.create({ url: requestUrl });
   }
 }
 
-// Initialize the AutoSwitch manager
-const autoSwitchManager = new AutoSwitchManager(); 
+// Initialize the manager
+const autoswitchManager = new AutoSwitchManager();
+
+// Handle extension icon click
+chrome.action.onClicked.addListener((tab) => {
+  // This will open the popup, no need to handle here
+});
+
+// Keep service worker alive
+chrome.runtime.onStartup.addListener(() => {
+  console.log('🚀 AutoSwitch service worker started');
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+  console.log('🎉 AutoSwitch extension installed/updated');
+}); 

@@ -423,15 +423,16 @@ class PopupManager {
 
           // Also trigger the debug version via content script
           try {
-            await chrome.tabs.executeScript(tab.id, {
-              code: `
+            await chrome.scripting.executeScript({
+              target: { tabId: tab.id },
+              func: () => {
                 if (window.autoswitchInstance) {
                   console.log('🧪 Running comprehensive debug detection...');
                   window.autoswitchInstance.detectAccountsWithDebug();
                 } else {
                   console.log('❌ AutoSwitch instance not found - extension may not be loaded properly');
                 }
-              `
+              }
             });
           } catch (executeError) {
             console.log('Note: Could not run debug command:', executeError.message);
@@ -442,8 +443,14 @@ class PopupManager {
           console.log('Content script not loaded, attempting to inject...');
           
           try {
-            await chrome.tabs.executeScript(tab.id, { file: 'content-script.js' });
-            await chrome.tabs.insertCSS(tab.id, { file: 'content-script.css' });
+            await chrome.scripting.executeScript({
+              target: { tabId: tab.id },
+              files: ['content-script.js']
+            });
+            await chrome.scripting.insertCSS({
+              target: { tabId: tab.id },
+              files: ['content-script.css']
+            });
             
             // Wait a moment for injection to complete
             await new Promise(resolve => setTimeout(resolve, 1000));

@@ -106,6 +106,9 @@ class AutoSwitchContentManager {
 
   async handleMessage(message, sender, sendResponse) {
     switch (message.action) {
+      case 'ping':
+        sendResponse({ status: 'ready' });
+        break;
       case 'showSwitchNotification':
         this.showSwitchToast(message.data);
         break;
@@ -116,10 +119,19 @@ class AutoSwitchContentManager {
         const accounts = await this.detectMultipleAccounts();
         sendResponse(accounts);
         break;
+      case 'runDetection':
+        const detectedAccounts = await this.detectAccountsWithDebug();
+        sendResponse(detectedAccounts);
+        break;
       case 'showAccountPicker':
         this.showAccountPicker(message.data);
         break;
+      case 'triggerAutoSwitch':
+        const result = await this.handleAutoSwitchTrigger(message.data);
+        sendResponse(result);
+        break;
     }
+    return true; // Keep message channel open for async responses
   }
 
   onUrlChange() {
@@ -254,6 +266,16 @@ class AutoSwitchContentManager {
     console.log(`🎯 Final result: ${uniqueAccounts.length} unique accounts detected`);
     if (uniqueAccounts.length > 0) {
       console.log('👥 Final accounts:', uniqueAccounts);
+      
+      // Store accounts in background script for later use
+      try {
+        chrome.runtime.sendMessage({
+          action: 'storeAccounts',
+          data: uniqueAccounts
+        });
+      } catch (error) {
+        console.log('Could not store accounts in background:', error.message);
+      }
     } else {
       console.log('❌ No accounts detected by any method');
     }
@@ -367,46 +389,68 @@ class AutoSwitchContentManager {
     let profilePicture = null;
     let name = null;
 
-    // Extract email from various attributes
-    email = element.dataset?.email || 
-            element.dataset?.accountEmail ||
-            element.dataset?.userEmail ||
-            element.getAttribute('data-email') ||
-            element.getAttribute('title') ||
-            element.getAttribute('aria-label');
+    try {
+      // Extract email from various attributes
+      email = element.dataset?.email || 
+              element.dataset?.accountEmail ||
+              element.dataset?.userEmail ||
+              element.getAttribute('data-email') ||
+              element.getAttribute('title') ||
+              element.getAttribute('aria-label');
 
-    // Extract from text content if it's an email
-    if (!email && element.textContent) {
-      const emailMatch = element.textContent.match(/[\w\.-]+@[\w\.-]+\.\w+/);
-      if (emailMatch) {
-        email = emailMatch[0];
+      // Extract from text content if it's an email
+      if (!email && element.textContent) {
+        const emailMatch = element.textContent.match(/[\w\.-]+@[\w\.-]+\.\w+/);
+        if (emailMatch) {
+          email = emailMatch[0];
+        }
       }
-    }
 
-    // Extract profile picture
-    if (element.tagName === 'IMG') {
-      profilePicture = element.src;
-    } else {
-      const img = element.querySelector('img');
-      if (img) {
-        profilePicture = img.src;
+      // Extract from href attributes (sometimes emails are in links)
+      if (!email && element.href) {
+        const hrefEmailMatch = element.href.match(/[\w\.-]+@[\w\.-]+\.\w+/);
+        if (hrefEmailMatch) {
+          email = hrefEmailMatch[0];
+        }
       }
-    }
 
-    // Extract name from various sources
-    name = element.dataset?.name ||
-           element.dataset?.userName ||
-           element.getAttribute('alt') ||
-           element.getAttribute('aria-label');
+      // Extract profile picture
+      if (element.tagName === 'IMG') {
+        profilePicture = element.src;
+      } else {
+        const img = element.querySelector('img');
+        if (img) {
+          profilePicture = img.src;
+        }
+      }
 
-    // Validate email format
-    if (email && this.isValidEmail(email)) {
-      return {
-        email: email.toLowerCase(),
-        name: name || email.split('@')[0],
-        profilePicture: profilePicture || null,
-        source: 'DOM'
-      };
+      // Extract name from various sources
+      name = element.dataset?.name ||
+             element.dataset?.userName ||
+             element.getAttribute('alt') ||
+             element.getAttribute('aria-label');
+
+      // Clean up email if found
+      if (email) {
+        email = email.trim().toLowerCase();
+        
+        // Remove common prefixes/suffixes
+        email = email.replace(/^mailto:/, '');
+        email = email.replace(/\?.*$/, ''); // Remove query parameters
+      }
+
+      // Validate email format
+      if (email && this.isValidEmail(email)) {
+        return {
+          email: email,
+          name: name || email.split('@')[0],
+          profilePicture: profilePicture || null,
+          source: 'DOM'
+        };
+      }
+
+    } catch (error) {
+      // Silently ignore errors from individual element extraction
     }
 
     return null;
@@ -591,7 +635,16 @@ class AutoSwitchContentManager {
       }
     });
 
-    return Array.from(uniqueMap.values());
+    const uniqueAccounts = Array.from(uniqueMap.values());
+    
+    // Ensure all accounts have proper index values
+    uniqueAccounts.forEach((account, index) => {
+      if (account.index === undefined || account.index === null) {
+        account.index = index;
+      }
+    });
+
+    return uniqueAccounts;
   }
 
   isValidEmail(email) {
@@ -638,6 +691,132 @@ class AutoSwitchContentManager {
 
   sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  async handleAutoSwitchTrigger(data) {
+    try {
+      console.log('🔄 Content script handling AutoSwitch trigger...');
+      
+      // Run comprehensive account detection
+      const accounts = await this.detectMultipleAccounts();
+      
+      if (accounts.length === 0) {
+        console.log('❌ No accounts detected, showing fallback options');
+        this.showFallbackOptions(data.url);
+        return { success: false, reason: 'no_accounts' };
+        
+      } else if (accounts.length === 1) {
+        console.log('✅ Single account detected, auto-switching...');
+        const account = accounts[0];
+        account.index = account.index || 0;
+        
+        // Perform auto-switch
+        const urlObj = new URL(data.url);
+        urlObj.searchParams.set('authuser', account.index);
+        const newUrl = urlObj.toString();
+        
+        // Navigate to new URL
+        window.location.href = newUrl;
+        
+        return { 
+          success: true, 
+          account: account,
+          switchData: {
+            originalUrl: data.url,
+            newUrl: newUrl,
+            account: account
+          }
+        };
+        
+      } else {
+        console.log(`🎭 Multiple accounts detected (${accounts.length}), showing picker...`);
+        this.showAccountPicker({ accounts: accounts, url: data.url });
+        return { success: true, reason: 'multiple_accounts' };
+      }
+      
+    } catch (error) {
+      console.error('Error in handleAutoSwitchTrigger:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  showFallbackOptions(url) {
+    // Remove existing fallback modal
+    const existingModal = document.getElementById('autoswitch-fallback-modal');
+    if (existingModal) {
+      existingModal.remove();
+    }
+
+    // Create overlay
+    const overlay = document.createElement('div');
+    overlay.id = 'autoswitch-fallback-modal';
+    overlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 10000;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    `;
+
+    // Create modal
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      max-width: 400px;
+      width: 90%;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    `;
+
+    const title = document.title || 'Document';
+    modal.innerHTML = `
+      <h3 style="margin: 0 0 16px 0; color: #ea4335; font-size: 18px; font-weight: 600;">No Access Found</h3>
+      <p style="margin: 0 0 16px 0; color: #5f6368; line-height: 1.4;">None of your Google accounts have access to this document.</p>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <button id="request-access-btn" style="padding: 12px; background: #1a73e8; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 500;">Request Access</button>
+        <button id="retry-btn" style="padding: 12px; border: 1px solid #dadce0; background: white; border-radius: 8px; cursor: pointer;">Retry</button>
+        <button id="add-account-btn" style="padding: 12px; border: 1px solid #dadce0; background: white; border-radius: 8px; cursor: pointer;">Add Another Account</button>
+        <button id="close-btn" style="padding: 12px; border: 1px solid #dadce0; background: white; border-radius: 8px; cursor: pointer;">Close</button>
+      </div>
+    `;
+
+    // Handle buttons
+    modal.querySelector('#request-access-btn').addEventListener('click', () => {
+      const subject = encodeURIComponent(`Access request for ${title}`);
+      const body = encodeURIComponent(`Hi, I need access to this document: ${url}`);
+      window.open(`mailto:?subject=${subject}&body=${body}`);
+      overlay.remove();
+    });
+
+    modal.querySelector('#retry-btn').addEventListener('click', () => {
+      window.location.reload();
+    });
+
+    modal.querySelector('#add-account-btn').addEventListener('click', () => {
+      window.open('https://accounts.google.com/AccountChooser', '_blank');
+      overlay.remove();
+    });
+
+    modal.querySelector('#close-btn').addEventListener('click', () => {
+      overlay.remove();
+    });
+
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    // Close on overlay click
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        overlay.remove();
+      }
+    });
   }
 
   showAccountPicker(data) {
